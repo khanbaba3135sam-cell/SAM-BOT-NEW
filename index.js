@@ -9,7 +9,7 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
-// ✅ Public folder serve करें
+// ✅ Public folder serve
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
@@ -19,16 +19,16 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Global bot state
+// Bot state
 let botApi = null;
 let adminID = null;
 let prefix = '/';
 let joinedGroups = [];
 
 // Per-thread settings
-const threadSettings = new Map();
-const targetMode = new Map();
-const fightMode = new Map();
+const threadSettings = new Map();      // { lockedGroupName, lockedNickname, lockedPhoto, botNickname }
+const targetMode = new Map();          // { targetID, active }
+const fightMode = new Map();           // boolean
 
 function emitLog(msg) {
     io.emit('botlog', msg);
@@ -52,6 +52,7 @@ io.on('connection', (socket) => {
     socket.emit('groupsUpdate', joinedGroups);
 });
 
+// ==================== CONFIGURE ENDPOINT ====================
 app.post('/configure', (req, res) => {
     const { cookies, prefix: newPrefix, adminID: newAdminID } = req.body;
 
@@ -99,35 +100,39 @@ app.post('/configure', (req, res) => {
             }
         });
 
-        res.send('बॉट सफलतापूर्वक शुरू हो गया! ✅');
+        res.send('✅ बॉट सफलतापूर्वक शुरू हो गया!');
     });
 });
 
+// ==================== MESSAGE HANDLER ====================
 function handleMessage(api, event) {
     const { body, senderID, threadID } = event;
     const threadSetting = threadSettings.get(threadID) || {};
 
+    // Target mode auto-reply
     const target = targetMode.get(threadID);
     if (target && target.active && target.targetID === senderID) {
-        api.sendMessage('TERI MA KI CHUT 🖕', threadID);
+        api.sendMessage('𝐓𝐄𝐑𝐈 𝐌𝐀 𝐊𝐈 𝐂𝐇𝐔𝐓 🖕', threadID);
     }
 
+    // Fight mode (random gaali)
     if (fightMode.get(threadID)) {
-        const insults = ['Bhosdike', 'Madarchod', 'Gandu', 'Harami', 'Chutiya'];
+        const insults = ['𝐁𝐡𝐨𝐬𝐝𝐢𝐤𝐞', '𝐌𝐚𝐝𝐚𝐫𝐜𝐡𝐨𝐝', '𝐆𝐚𝐧𝐝𝐮', '𝐇𝐚𝐫𝐚𝐦𝐢', '𝐂𝐡𝐮𝐭𝐢𝐲𝐚'];
         const randomInsult = insults[Math.floor(Math.random() * insults.length)];
         api.sendMessage(randomInsult, threadID);
         return;
     }
 
+    // Commands
     if (body.startsWith(prefix)) {
         const args = body.slice(prefix.length).trim().split(/ +/);
         const cmd = args.shift().toLowerCase();
 
         emitLog(`📨 कमांड: ${cmd} थ्रेड ${threadID} से`);
 
-        const adminOnly = ['target', 'fyt', 'stop', 'group', 'nickname', 'photolock', 'botnickname'];
+        const adminOnly = ['target', 'fight', 'stop', 'group', 'nickname', 'photolock', 'botnickname'];
         if (adminOnly.includes(cmd) && !isAdmin(senderID)) {
-            api.sendMessage('❌ यह कमांड सिर्फ ADMIN इस्तेमाल कर सकता है!', threadID);
+            api.sendMessage('❌ यह कमांड सिर्फ एडमिन इस्तेमाल कर सकता है!', threadID);
             return;
         }
 
@@ -137,18 +142,19 @@ function handleMessage(api, event) {
                 break;
 
             case 'tid':
-                api.sendMessage(`इस ग्रुप की ID: ${threadID}`, threadID);
+                api.sendMessage(`इस ग्रुप की आईडी: ${threadID}`, threadID);
                 break;
 
             case 'uid':
                 if (Object.keys(event.mentions).length > 0) {
                     const uid = Object.keys(event.mentions)[0];
-                    api.sendMessage(`उस यूजर की ID: ${uid}`, threadID);
+                    api.sendMessage(`उस यूजर की आईडी: ${uid}`, threadID);
                 } else {
-                    api.sendMessage(`आपकी ID: ${senderID}`, threadID);
+                    api.sendMessage(`आपकी आईडी: ${senderID}`, threadID);
                 }
                 break;
 
+            // ========== GROUP SECURITY ==========
             case 'group':
                 if (args[0] === 'on') {
                     const newName = args.slice(1).join(' ');
@@ -172,7 +178,7 @@ function handleMessage(api, event) {
                     threadSettings.set(threadID, settings);
                     api.sendMessage('✅ ग्रुप नाम लॉक हटा दिया', threadID);
                 } else {
-                    api.sendMessage('⚠️ सही फॉर्मेट: /group on <name> या /group off', threadID);
+                    api.sendMessage('⚠️ सही फॉर्मेट: /group on <नाम> या /group off', threadID);
                 }
                 break;
 
@@ -204,7 +210,7 @@ function handleMessage(api, event) {
                     threadSettings.set(threadID, settings);
                     api.sendMessage('✅ निकनेम लॉक हटा दिया', threadID);
                 } else {
-                    api.sendMessage('⚠️ सही फॉर्मेट: /nickname on <name> या /nickname off', threadID);
+                    api.sendMessage('⚠️ सही फॉर्मेट: /nickname on <निकनेम> या /nickname off', threadID);
                 }
                 break;
 
@@ -249,6 +255,7 @@ function handleMessage(api, event) {
                 });
                 break;
 
+            // ========== TARGET SYSTEM ==========
             case 'target':
                 if (args[0] === 'on') {
                     const mention = Object.keys(event.mentions)[0];
@@ -262,16 +269,17 @@ function handleMessage(api, event) {
                     targetMode.delete(threadID);
                     api.sendMessage('✅ टारगेट बंद', threadID);
                 } else {
-                    api.sendMessage('⚠️ सही फॉर्मेट: /target on @mention या /target off', threadID);
+                    api.sendMessage('⚠️ सही फॉर्मेट: /target on @मेंशन या /target off', threadID);
                 }
                 break;
 
-            case 'fyt':
+            // ========== FIGHT MODE ==========
+            case 'fight':
                 if (args[0] === 'on') {
                     fightMode.set(threadID, true);
                     api.sendMessage('⚔️ फाइट मोड ऑन! अब हर मैसेज पर जवाब मिलेगा', threadID);
                 } else {
-                    api.sendMessage('⚠️ सही फॉर्मेट: /fyt on', threadID);
+                    api.sendMessage('⚠️ सही फॉर्मेट: /fight on', threadID);
                 }
                 break;
 
@@ -286,11 +294,13 @@ function handleMessage(api, event) {
     }
 }
 
+// ==================== LOG EVENT HANDLER ====================
 function handleLogEvent(api, event) {
     const { threadID, logMessageType, logMessageData } = event;
     const settings = threadSettings.get(threadID);
     if (!settings) return;
 
+    // Group name change
     if (logMessageType === 'log:thread-name' && settings.lockedGroupName) {
         const newName = logMessageData.name;
         if (newName !== settings.lockedGroupName) {
@@ -302,6 +312,7 @@ function handleLogEvent(api, event) {
         }
     }
 
+    // Nickname change
     if (logMessageType === 'log:user-nickname' && settings.lockedNickname) {
         const { participant_id, nickname } = logMessageData;
         if (nickname !== settings.lockedNickname) {
@@ -313,6 +324,7 @@ function handleLogEvent(api, event) {
         }
     }
 
+    // Photo change
     if (logMessageType === 'log:thread-icon' && settings.lockedPhoto) {
         api.changeThreadImage(settings.lockedPhoto, threadID, (err) => {
             if (!err) {
@@ -321,6 +333,7 @@ function handleLogEvent(api, event) {
         });
     }
 
+    // Bot's own nickname change
     if (logMessageType === 'log:user-nickname' && logMessageData.participant_id === api.getCurrentUserID() && settings.botNickname) {
         if (logMessageData.nickname !== settings.botNickname) {
             api.changeNickname(settings.botNickname, threadID, api.getCurrentUserID(), (err) => {
@@ -332,6 +345,7 @@ function handleLogEvent(api, event) {
     }
 }
 
+// ==================== HELP MESSAGE ====================
 function sendHelp(api, threadID) {
     const helpMsg = `
 😈 𝐃𝟑𝟑𝐏 𝐁𝟒𝐃𝐌𝟒𝐒𝐇 𝐁𝐎𝐓 😈
@@ -339,29 +353,30 @@ function sendHelp(api, threadID) {
 
 📚 सामान्य:
   /help – यह मैसेज
-  /tid – ग्रुप ID
-  /uid – अपनी या मेंशन यूजर की ID
+  /tid – ग्रुप आईडी
+  /uid – अपनी या मेंशन यूजर की आईडी
 
 🔐 ग्रुप सिक्योरिटी (केवल एडमिन):
   /group on <नाम> – ग्रुप नाम लॉक
   /group off – लॉक हटाएँ
   /nickname on <निकनेम> – सबका निकनेम लॉक
   /nickname off – लॉक हटाएँ
-  /photolock on – ग्रुप फोटो लॉक (डिफॉल्ट फोटो)
+  /photolock on – ग्रुप फोटो लॉक
   /photolock off – लॉक हटाएँ
   /botnickname <नाम> – बॉट का निकनेम सेट
 
 🎯 टारगेट सिस्टम (केवल एडमिन):
-  /target on @मेंशन – यूजर को टारगेट करें (ऑटो-रिप्लाई)
+  /target on @मेंशन – यूजर को टारगेट करें
   /target off – बंद करें
 
 ⚔️ फाइट मोड (केवल एडमिन):
-  /fyt on – फाइट मोड शुरू (हर मैसेज पर गाली)
+  /fight on – फाइट मोड शुरू
   /stop – बंद करें
     `;
     api.sendMessage(helpMsg, threadID);
 }
 
+// ==================== SERVER START ====================
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
     console.log(`🌐 सर्वर चल रहा है पोर्ट ${PORT} पर`);
