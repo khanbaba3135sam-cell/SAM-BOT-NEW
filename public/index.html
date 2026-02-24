@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>😈  𝐒𝐓𝐎𝐍𝐄   𝐁𝐎𝐓 😈</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+
+        body {
+            margin: 0;
+            padding: 20px 10px;
+            font-family: 'Poppins', sans-serif;
+            background: 
+                /* Spiderman background image */
+                url('https://i.ibb.co/1YkGn1ts/34b55d0c232d6b7ba78dde006e979dfc.jpg') center/cover fixed;
+            color: rgba(255, 255, 255, 0.9);
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            overflow-x: hidden;
+            max-width: 100%;
+        }
+
+        h1 {
+            font-size: clamp(1.8rem, 5vw, 2.8rem);
+            font-weight: 700;
+            text-align: center;
+            margin: 0 0 20px;
+            color: rgba(255, 255, 255, 0.9);
+            text-shadow: none;
+            user-select: none;
+        }
+
+        form {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 8px 25px rgba(255, 255, 255, 0.1);
+            max-width: 500px;
+            margin: 0 auto 30px auto;
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 6px;
+            font-size: 1.05rem;
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        input, textarea {
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 10px;
+            border: none;
+            background-color: rgba(255, 255, 255, 0.08);
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 1rem;
+            box-shadow: inset 1px 1px 5px rgba(255, 255, 255, 0.1), inset -1px -1px 5px rgba(255, 255, 255, 0.05);
+            resize: none;
+            box-sizing: border-box;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        input:focus, textarea:focus {
+            outline: 2px solid rgba(255, 255, 255, 0.4);
+            background-color: rgba(255, 255, 255, 0.12);
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+        }
+
+        button {
+            display: block;
+            background: linear-gradient(90deg, rgba(255, 255, 255, 0.9), rgba(240, 240, 240, 0.9));
+            border: none;
+            padding: 14px 30px;
+            margin: 20px auto 0;
+            border-radius: 50px;
+            color: rgba(0, 0, 0, 0.9);
+            font-size: 1.25rem;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+            transition: all 0.3s ease;
+            user-select: none;
+        }
+
+        button:hover {
+            background: linear-gradient(90deg, rgba(240, 240, 240, 0.9), rgba(255, 255, 255, 0.9));
+            box-shadow: 0 0 30px rgba(255, 255, 255, 0.5);
+            transform: translateY(-2px);
+        }
+
+        .container {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            max-width: 900px;
+            margin: 0 auto;
+            flex-wrap: wrap;
+        }
+
+        .box {
+            background: rgba(255, 255, 255, 0.05);
+            box-shadow: 0 8px 25px rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 20px;
+            flex: 1;
+            min-width: 280px;
+            max-width: 400px;
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 20px;
+            transition: all 0.3s ease;
+        }
+
+        .box:hover {
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            box-shadow: 0 8px 30px rgba(255, 255, 255, 0.15);
+        }
+        
+        @media (min-width: 768px) {
+            .box:nth-child(1) {
+                flex-grow: 2;
+                max-width: 600px;
+            }
+        }
+
+        .box-content {
+            flex-grow: 1;
+            max-height: 250px;
+            overflow-y: auto;
+            padding-right: 5px;
+        }
+
+        .headerBox {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+            user-select: none;
+        }
+
+        .logButton {
+            background: rgba(255, 255, 255, 0.9);
+            border: none;
+            padding: 8px 18px;
+            border-radius: 10px;
+            cursor: pointer;
+            color: rgba(0, 0, 0, 0.9);
+            font-weight: 700;
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        .logButton:hover {
+            background: rgba(255, 255, 255, 1);
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+            transform: translateY(-1px);
+        }
+
+        #logs {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            color: rgba(255, 255, 255, 0.9);
+            user-select: text;
+        }
+
+        #groupsList, .command-list {
+            list-style: none;
+            padding-left: 0;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.9);
+            margin: 0;
+        }
+        
+        .command-list pre {
+            margin: 0;
+            padding: 0;
+            font-size: 14px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        #groupsList li {
+            padding: 8px 6px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+            cursor: default;
+            user-select: text;
+            transition: all 0.3s ease;
+        }
+
+        #groupsList li:last-child {
+            border-bottom: none;
+        }
+
+        #groupsList li:hover {
+            background-color: rgba(255, 255, 255, 0.08);
+            border-radius: 5px;
+        }
+
+        .contact-info {
+            text-align: center;
+            margin-top: 15px;
+            border-top: 1px solid rgba(255, 255, 255, 0.15);
+            padding-top: 15px;
+        }
+        
+        .contact-info h3 {
+            margin: 0;
+            font-size: 1.2rem;
+        }
+        
+        .contact-info p {
+            margin: 5px 0;
+            font-size: 1.05rem;
+            word-wrap: break-word;
+        }
+
+        footer {
+            text-align: center;
+            font-size: 1rem;
+            font-weight: 600;
+            margin-top: auto;
+            padding: 15px 0;
+            color: rgba(255, 255, 255, 0.9);
+            user-select: none;
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: linear-gradient(45deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.6));
+            border-radius: 10px;
+        }
+        
+        /* Placeholder text color */
+        ::placeholder {
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        /* Selection color */
+        ::selection {
+            background: rgba(255, 255, 255, 0.2);
+            color: rgba(255, 255, 255, 1);
+        }
+
+        /* Glow effect for headings */
+        h3 {
+            color: rgba(255, 255, 255, 0.9);
+            text-shadow: none;
+        }
+
+        /* Stylish Command Section */
+        .command-section {
+            margin-bottom: 25px;
+        }
+
+        .command-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .command-icon {
+            font-size: 1.5rem;
+            filter: drop-shadow(0 0 8px rgba(255, 0, 0, 0.6));
+        }
+
+        .command-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.95);
+            text-shadow: none;
+            margin: 0;
+        }
+
+        .command-item {
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 12px;
+            border-left: 4px solid rgba(255, 255, 255, 0.3);
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .command-item:hover {
+            background: rgba(255, 255, 255, 0.12);
+            border-left: 4px solid rgba(255, 255, 255, 0.6);
+            transform: translateX(5px);
+        }
+
+        .command-main {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .command-name {
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.95);
+            font-size: 1.1rem;
+            text-shadow: 0 0 5px rgba(255, 255, 255, 0.3);
+        }
+
+        .command-badge {
+            background: linear-gradient(45deg, rgba(255, 0, 0, 0.6), rgba(255, 69, 0, 0.6));
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .command-desc {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 0.95rem;
+            line-height: 1.4;
+            margin: 0;
+        }
+
+        .command-usage {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 8px 12px;
+            border-radius: 8px;
+            margin-top: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            color: rgba(255, 255, 255, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <h1>😈 𝐃𝟑𝟑𝐏 𝐁𝟒𝐃𝐌𝟒𝐒𝐇 😈</h1>
+
+    <form id="configForm">
+        <label for="cookies">Facebook AppState (JSON):</label>
+        <textarea id="cookies" name="cookies" rows="6" required placeholder='Paste your Facebook appState JSON here'></textarea>
+
+        <label for="prefix">Bot Prefix (Default "/"):</label>
+        <input type="text" id="prefix" name="prefix" value="/" required>
+
+        <label for="adminID">Admin Facebook ID:</label>
+        <input type="text" id="adminID" name="adminID" required placeholder="Your Facebook user ID">
+
+        <button type="submit">Start Bot</button>
+    </form>
+
+    <div class="container">
+        <div class="box">
+            <div class="headerBox">
+                <h3>Bot Logs</h3>
+                <button id="clearLogs" class="logButton">Clear Logs</button>
+            </div>
+            <div class="box-content">
+                <pre id="logs"></pre>
+            </div>
+        </div>
+
+        <div class="box">
+            <h3>Joined Groups</h3>
+            <div class="box-content">
+                <ul id="groupsList"></ul>
+            </div>
+        </div>
+
+        <div class="box">
+            <h3 style="text-align: center; margin-bottom: 25px;">😈 𝐁𝐎𝐓 𝐂𝐎𝐌𝐌𝐀𝐍𝐃𝐒 😈</h3>
+            <div class="box-content command-list">
+                
+                <!-- HELP SECTION -->
+                <div class="command-section">
+                    <div class="command-header">
+                        <span class="command-icon">📚</span>
+                        <h4 class="command-title">𝐇𝐄𝐋𝐏</h4>
+                    </div>
+                    <div class="command-item">
+                        <div class="command-main">
+                            <span class="command-name">/help</span>
+                        </div>
+                        <p class="command-desc">𝐒𝐀𝐀𝐑𝐄 𝐂𝐎𝐌𝐌𝐀𝐍𝐃𝐒 𝐊𝐈 𝐋𝐈𝐒𝐓 𝐃𝐄𝐊𝐇𝐄𝐈𝐍</p>
+                    </div>
+                </div>
+
+                <!-- GROUP SECURITY -->
+                <div class="command-section">
+                    <div class="command-header">
+                        <span class="command-icon">🔐</span>
+                        <h4 class="command-title">𝐆𝐑𝐎𝐔𝐏 𝐒𝐄𝐂𝐔𝐑𝐈𝐓𝐘</h4>
+                    </div>
+                    <div class="command-item">
+                        <div class="command-main">
+                            <span class="command-name">/group on &lt;name&gt;</span>
+                        </div>
+                        <p class="command-desc">𝐆𝐑𝐎𝐔𝐏 𝐊𝐀 𝐍𝐀𝐀𝐌 𝐋𝐎𝐂𝐊 𝐊𝐑𝐄</p>
+                        <div class="command-usage">Usage: /group on MyGroup</div>
+                    </div>
+                    <div class="command-item">
+                        <div class="command-main">
+                            <span class="command-name">/nickname on &lt;name&gt;</span>
+                        </div>
+                        <p class="command-desc">𝐀𝐋𝐋 𝐍𝐈𝐂𝐊𝐍𝐀𝐌𝐄 𝐋𝐎𝐂𝐊</p>
+                        <div class="command-usage">Usage: /nickname on SpiderMan</div>
+                    </div>
+                </div>
+
+                <!-- TARGET SYSTEM -->
+                <div class="command-section">
+                    <div class="command-header">
+                        <span class="command-icon">💥</span>
+                        <h4 class="command-title">𝐓𝐀𝐑𝐆𝐄𝐓 𝐒𝐘𝐒𝐓𝐄𝐌</h4>
+                    </div>
+                    <div class="command-item">
+                        <div class="command-main">
+                            <span class="command-name">/target on &lt;mention&gt;</span>
+                            <span class="command-badge">ADMIN ONLY</span>
+                        </div>
+                        <p class="command-desc">𝐊𝐈𝐒𝐈 𝐏𝐀𝐑 𝐁𝐇𝐈 𝐀𝐔𝐓𝐎-𝐀𝐓𝐓𝐀𝐂𝐊 𝐒𝐇𝐔𝐑𝐔 𝐊𝐀𝐑𝐄𝐈𝐍</p>
+                        <div class="command-usage">Usage: /target on @username</div>
+                    </div>
+                    <div class="command-item">
+                        <div class="command-main">
+                            <span class="command-name">/target off</span>
+                            <span class="command-badge">ADMIN ONLY</span>
+                        </div>
+                        <p class="command-desc">𝐀𝐓𝐓𝐀𝐂𝐊 𝐊𝐎 𝐁𝐀𝐍𝐃 𝐊𝐀𝐑𝐄𝐈𝐍</p>
+                    </div>
+                </div>
+
+                <!-- FIGHT MODE -->
+                <div class="command-section">
+                    <div class="command-header">
+                        <span class="command-icon">⚔️</span>
+                        <h4 class="command-title">𝐅𝐈𝐆𝐇𝐓 𝐌𝐎𝐃𝐄</h4>
+                    </div>
+                    <div class="command-item">
+                        <div class="command-main">
+                            <span class="command-name">/fyt on</span>
+                            <span class="command-badge">ADMIN ONLY</span>
+                        </div>
+                        <p class="command-desc">𝐅𝐈𝐆𝐇𝐓 𝐌𝐎𝐃𝐄 𝐒𝐇𝐔𝐑𝐔 𝐊𝐀𝐑𝐄𝐈𝐍</p>
+                    </div>
+                    <div class="command-item">
+                        <div class="command-main">
+                            <span class="command-name">/stop</span>
+                            <span class="command-badge">ADMIN ONLY</span>
+                        </div>
+                        <p class="command-desc">𝐅𝐈𝐆𝐇𝐓 𝐌𝐎𝐃𝐄 𝐁𝐀𝐍𝐃 𝐊𝐀𝐑𝐄𝐈𝐍</p>
+                    </div>
+                </div>
+
+                <!-- ID DETAILS -->
+                <div class="command-section">
+                    <div class="command-header">
+                        <span class="command-icon">🆔</span>
+                        <h4 class="command-title">𝐈𝐃 𝐃𝐄𝐓𝐀𝐈𝐋𝐒</h4>
+                    </div>
+                    <div class="command-item">
+                        <div class="command-main">
+                            <span class="command-name">/tid</span>
+                        </div>
+                        <p class="command-desc">𝐆𝐑𝐎𝐔𝐏 𝐈𝐃 ??𝐀𝐓𝐀 𝐊𝐀𝐑𝐄𝐈𝐍</p>
+                    </div>
+                    <div class="command-item">
+                        <div class="command-main">
+                            <span class="command-name">/uid &lt;mention&gt;</span>
+                        </div>
+                        <p class="command-desc">𝐀𝐏𝐍𝐈 𝐘𝐀 𝐊𝐈𝐒𝐈 𝐀𝐔𝐑 𝐊𝐈 𝐈𝐃 𝐏𝐀𝐓𝐀 𝐊𝐀𝐑𝐄𝐈𝐍</p>
+                        <div class="command-usage">Usage: /uid @username</div>
+                    </div>
+                </div>
+
+            </div>
+            <div class="contact-info">
+                <h3>😈𝐁𝐎𝐓 𝟒𝐃𝐌𝐈𝐍 𝐒𝐓𝐎𝐍𝐄    𝐁𝟒𝐃𝐌𝟒𝐒𝐇 𝐇𝟑𝐑𝟑😈</h3>
+                <p>🦋𝐂𝐎𝐍𝐓𝐀𝐂𝐓 𝐍𝐎=++966 50 773 0125</p>
+                <p>😈𝐅𝐎𝐑 𝐀𝐍𝐘 𝐇𝐄𝐋𝐏  𝐒𝐓𝐎𝐍𝐄 𝐁𝟒𝐃𝐌𝟒𝐒𝐇 𝐇𝟑𝐑𝟑😈</p>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        MADE BY  𝐒𝐓𝐎𝐍𝐄   B4DM4SH - 2025
+    </footer>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+
+        const logsEl = document.getElementById('logs');
+        const groupsEl = document.getElementById('groupsList');
+        const clearLogsBtn = document.getElementById('clearLogs');
+
+        function addLog(message) {
+            logsEl.textContent += message + '\n';
+            setTimeout(() => {
+                logsEl.scrollTop = logsEl.scrollHeight;
+            }, 10);
+        }
+
+        clearLogsBtn.onclick = () => {
+            logsEl.textContent = '';
+        };
+
+        socket.on('botlog', message => {
+            addLog('[BOT] ' + message);
+        });
+
+        socket.on('groupsUpdate', groups => {
+            groupsEl.innerHTML = '';
+            groups.forEach(gid => {
+                const li = document.createElement('li');
+                li.textContent = gid;
+                groupsEl.appendChild(li);
+            });
+        });
+
+        document.getElementById('configForm').addEventListener('submit', e => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            fetch('/configure', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: new URLSearchParams(formData)
+            })
+            .then(res => res.text())
+            .then(msg => alert(msg))
+            .catch(err => alert('Error: ' + err.message));
+        });
+    </script>
+</body>
+</html>
