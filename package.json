@@ -10,13 +10,13 @@
   "dependencies": {
     "body-parser": "^1.20.2",
     "express": "^4.18.2",
-    "ws3-fca": "^1.0.0",
     "socket.io": "^4.7.1",
-    "npmlog": "^6.0.1"
+    "npmlog": "^6.0.1",
+    "ws3-fca": "github:bierchermues/ws3-fca"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"
   },
   "author": "Deep Badmash inxide",
   "license": "MIT"
-}  
+}
