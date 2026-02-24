@@ -1,0 +1,41 @@
+{
+  "botNickname": " 𝐒𝐓𝐎𝐍𝐄  𝐁𝟒𝐃𝐌𝟒𝐒𝐇",
+  "cookies": [
+    {
+      "key": "sb",
+      "value": "put_your_sb_value_here",
+      "domain": ".facebook.com",
+      "path": "/",
+      "hostOnly": false,
+      "creation": "2025-01-01T00:00:00.000Z",
+      "lastAccessed": "2025-01-01T00:00:00.000Z"
+    },
+    {
+      "key": "datr",
+      "value": "put_your_datr_value_here",
+      "domain": ".facebook.com",
+      "path": "/",
+      "hostOnly": false,
+      "creation": "2025-01-01T00:00:00.000Z",
+      "lastAccessed": "2025-01-01T00:00:00.000Z"
+    },
+    {
+      "key": "c_user",
+      "value": "put_your_c_user_value_here",
+      "domain": ".facebook.com",
+      "path": "/",
+      "hostOnly": false,
+      "creation": "2025-01-01T00:00:00.000Z",
+      "lastAccessed": "2025-01-01T00:00:00.000Z"
+    },
+    {
+      "key": "xs",
+      "value": "put_your_xs_value_here",
+      "domain": ".facebook.com",
+      "path": "/",
+      "hostOnly": false,
+      "creation": "2025-01-01T00:00:00.000Z",
+      "lastAccessed": "2025-01-01T00:00:00.000Z"
+    }
+  ]
+}
