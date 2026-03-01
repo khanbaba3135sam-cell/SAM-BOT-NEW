@@ -1,383 +1,497 @@
 const express = require('express');
-const http = require('http');
-const socketIo = require('socket.io');
 const bodyParser = require('body-parser');
 const login = require('ws3-fca');
+const fs = require('fs');
+const http = require('http');
+const { Server } = require('socket.io');
 const path = require('path');
-
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server);
+const io = new Server(server);
 
-// ✅ Public folder serve
-app.use(express.static(path.join(__dirname, 'public')));
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(bodyParser.json());
-
-// ✅ Home route
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// Bot state
-let botApi = null;
+// --- GLOBAL STATE ---
+let botAPI = null;
 let adminID = null;
 let prefix = '/';
-let joinedGroups = [];
+let botNickname = '𝐓𝐇𝐄 𝐖𝐀𝐋𝐄𝐄𝐃 𝐗𝐃';
 
-// Per-thread settings
-const threadSettings = new Map();      // { lockedGroupName, lockedNickname, lockedPhoto, botNickname }
-const targetMode = new Map();          // { targetID, active }
-const fightMode = new Map();           // boolean
+let lockedGroups = {};
+let lockedNicknames = {};
+let lockedGroupPhoto = {};
+let fightSessions = {};
+let joinedGroups = new Set();
+let targetSessions = {};
+let nickLockEnabled = false;
+let nickRemoveEnabled = false;
+let gcAutoRemoveEnabled = false;
+let currentCookies = null;
+let reconnectAttempt = 0;
+const signature = `\n                      ⚠️\n                  𝐓𝐇𝐄 𝐖𝐀𝐋𝐄𝐄𝐃 𝐗𝐃⚠️`;
+const separator = `\n---🤬---💸---😈--🤑---😈---👑---`;
 
-function emitLog(msg) {
-    io.emit('botlog', msg);
+// --- ANTI-OUT FEATURE ---
+let antiOutEnabled = true;
+
+// --- ANTI-CALL FEATURE ---
+let antiCallEnabled = true;
+
+// --- UTILITY FUNCTIONS ---
+function emitLog(message, isError = false) {
+  const logMessage = `[${new Date().toISOString()}] ${isError ? '❌ ERROR: ' : '✅ INFO: '}${message}`;
+  console.log(logMessage);
+  io.emit('botlog', logMessage);
 }
 
-function isAdmin(senderID) {
-    return senderID === adminID;
+function saveCookies() {
+  if (!botAPI) {
+    emitLog('❌ Cannot save cookies: Bot API not initialized.', true);
+    return;
+  }
+  try {
+    const newAppState = botAPI.getAppState();
+    const configToSave = {
+      botNickname: botNickname,
+      cookies: newAppState
+    };
+    fs.writeFileSync('config.json', JSON.stringify(configToSave, null, 2));
+    currentCookies = newAppState;
+    emitLog('✅ AppState saved successfully.');
+  } catch (e) {
+    emitLog('❌ Failed to save AppState: ' + e.message, true);
+  }
 }
 
-function updateGroupsList() {
-    if (!botApi) return;
-    botApi.getThreadList(100, null, ['INBOX'], (err, list) => {
-        if (!err) {
-            joinedGroups = list.filter(t => t.isGroup).map(t => t.threadID);
-            io.emit('groupsUpdate', joinedGroups);
-        }
+// --- BOT INITIALIZATION AND RECONNECTION LOGIC ---
+function initializeBot(cookies, prefix, adminID) {
+  emitLog('🚀 Initializing bot with ws3-fca...');
+  currentCookies = cookies;
+  reconnectAttempt = 0;
+
+  login({ appState: currentCookies }, (err, api) => {
+    if (err) {
+      emitLog(`❌ Login error: ${err.message}. Retrying in 10 seconds.`, true);
+      setTimeout(() => initializeBot(currentCookies, prefix, adminID), 10000);
+      return;
+    }
+
+    emitLog('✅ Bot successfully logged in.');
+    botAPI = api;
+    botAPI.setOptions({
+      selfListen: true,
+      listenEvents: true,
+      updatePresence: false
     });
+
+    updateJoinedGroups(api);
+
+    setTimeout(() => {
+        setBotNicknamesInGroups();
+        sendStartupMessage();
+        startListening(api);
+    }, 5000);
+
+    setInterval(saveCookies, 600000);
+  });
 }
 
-io.on('connection', (socket) => {
-    socket.emit('groupsUpdate', joinedGroups);
-});
+function startListening(api) {
+  api.listenMqtt(async (err, event) => {
+    if (err) {
+      emitLog(`❌ Listener error: ${err.message}. Attempting to reconnect...`, true);
+      reconnectAndListen();
+      return;
+    }
 
-// ==================== CONFIGURE ENDPOINT ====================
-app.post('/configure', (req, res) => {
-    const { cookies, prefix: newPrefix, adminID: newAdminID } = req.body;
-
-    let appState;
     try {
-        appState = JSON.parse(cookies);
+      if (event.type === 'message' || event.type === 'message_reply') {
+        await handleMessage(api, event);
+      } else if (event.logMessageType === 'log:thread-name') {
+        await handleThreadNameChange(api, event);
+      } else if (event.logMessageType === 'log:user-nickname') {
+        await handleNicknameChange(api, event);
+      } else if (event.logMessageType === 'log:thread-image') {
+        await handleGroupImageChange(api, event);
+      } else if (event.logMessageType === 'log:subscribe') {
+        await handleBotAddedToGroup(api, event);
+      } else if (event.logMessageType === 'log:unsubscribe') {
+        await handleParticipantLeft(api, event);
+      } else if (event.type === 'event' && event.logMessageType === 'log:thread-call') {
+        await handleGroupCall(api, event);
+      }
     } catch (e) {
-        emitLog('❌ Cookies JSON गलत है');
-        return res.status(400).send('Invalid JSON');
+      emitLog(`❌ Handler crashed: ${e.message}`, true);
     }
+  });
+}
 
-    prefix = newPrefix || '/';
-    adminID = newAdminID;
+function reconnectAndListen() {
+  reconnectAttempt++;
+  emitLog(`🔄 Reconnect attempt #${reconnectAttempt}...`, false);
+  if (botAPI) {
+    try {
+      botAPI.stopListening();
+    } catch (e) {
+      emitLog(`❌ Failed to stop listener: ${e.message}`, true);
+    }
+  }
 
-    emitLog('🔑 Facebook में login कर रहा हूँ...');
+  if (reconnectAttempt > 5) {
+    emitLog('❌ Maximum reconnect attempts reached. Restarting login process.', true);
+    initializeBot(currentCookies, prefix, adminID);
+  } else {
+    setTimeout(() => {
+      if (botAPI) {
+        startListening(botAPI);
+      } else {
+        initializeBot(currentCookies, prefix, adminID);
+      }
+    }, 5000);
+  }
+}
 
-    login({ appState }, (err, api) => {
-        if (err) {
-            emitLog('❌ Login फेल: ' + err);
-            return res.status(500).send('Login failed: ' + err);
+async function setBotNicknamesInGroups() {
+  if (!botAPI) return;
+  try {
+    const threads = await botAPI.getThreadList(100, null, ['GROUP']);
+    const botID = botAPI.getCurrentUserID();
+    for (const thread of threads) {
+        try {
+            const threadInfo = await botAPI.getThreadInfo(thread.threadID);
+            if (threadInfo && threadInfo.nicknames && threadInfo.nicknames[botID] !== botNickname) {
+                await botAPI.changeNickname(botNickname, thread.threadID, botID);
+                emitLog(`✅ Bot's nickname set in group: ${thread.threadID}`);
+            }
+        } catch (e) {
+            emitLog(`❌ Error: ${e.message}`, true);
         }
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Increased delay to 1s
+    }
+  } catch (e) {
+    emitLog(`❌ Error: ${e.message}`, true);
+  }
+}
 
-        botApi = api;
-        emitLog('✅ Login सफल!');
+async function sendStartupMessage() {
+  if (!botAPI) return;
+  const startupMessage = `😈𝟒𝐋𝐋 𝐇𝟒𝐓𝟑𝐑𝐒 𝐊𝐈 𝐌𝟒𝟒 𝐂𝐇𝐎𝐃𝐍𝟑 𝐖𝟒𝐋𝟒  𝐖𝐀𝐋𝐄𝐄𝐃 𝐁𝐎𝐓 𝐇𝟑𝐑𝟑 😈`;
+  try {
+    const threads = await botAPI.getThreadList(100, null, ['GROUP']);
+    for (const thread of threads) {
+        botAPI.sendMessage(startupMessage, thread.threadID)
+          .catch(e => emitLog(`❌ Startup error: ${e.message}`, true));
+        await new Promise(resolve => setTimeout(resolve, 2000)); [span_2](start_span)// Increased delay for startup spam prevention[span_2](end_span)
+    }
+  } catch (e) {
+    emitLog(`❌ Error: ${e.message}`, true);
+  }
+}
 
-        api.setOptions({
-            listenEvents: true,
-            selfListen: false
-        });
+async function updateJoinedGroups(api) {
+  try {
+    const threads = await api.getThreadList(100, null, ['GROUP']);
+    joinedGroups = new Set(threads.map(t => t.threadID));
+    emitGroups();
+  } catch (e) {
+    emitLog('❌ Update groups failed: ' + e.message, true);
+  }
+}
 
-        updateGroupsList();
+// --- ANTI-OUT HANDLER ---
+async function handleParticipantLeft(api, event) {
+  if (!antiOutEnabled) return;
+  try {
+    const { threadID, logMessageData } = event;
+    const leftParticipantID = logMessageData.leftParticipantFbId;
+    if (leftParticipantID === adminID || leftParticipantID === api.getCurrentUserID()) return;
+    
+    await api.addUserToGroup(leftParticipantID, threadID);
+    const userInfo = await api.getUserInfo(leftParticipantID);
+    const userName = userInfo[leftParticipantID]?.name || "User";
+    
+    const warningMessage = await formatMessage(api, event, 
+      `😈 𝐀𝐍𝐓𝐈-𝐎𝐔𝐓 𝐒𝐘𝐒𝐓𝐄𝐌 😈\n\n@${userName} NIKALNE KI KOSHISH KI? 😼\nTERI BHAN KI CHUT ME 𝐖𝐀𝐋𝐄𝐄𝐃 BADMASH KA LODA 😈`
+    );
+    await api.sendMessage(warningMessage, threadID);
+  } catch (error) {
+    emitLog(`❌ Anti-out error: ${error.message}`, true);
+  }
+}
 
-        api.listenMqtt((err, event) => {
-            if (err) {
-                emitLog('❌ Listen error: ' + err);
-                return;
-            }
+// --- ANTI-CALL HANDLER ---
+async function handleGroupCall(api, event) {
+  if (!antiCallEnabled) return;
+  try {
+    const { threadID, logMessageData } = event;
+    const callerID = logMessageData?.caller_id;
+    if (callerID === adminID) return;
+    
+    const userInfo = await api.getUserInfo(callerID);
+    const userName = userInfo[callerID]?.name || "User";
+    
+    const warningMessage = await formatMessage(api, event, 
+      `😈 𝐀𝐍𝐓𝐈-𝐂𝐀𝐋𝐋 𝐒𝐘𝐒𝐓𝐄𝐌 😈\n\n@${userName} CALL LAGANE KI KOSHISH KI? 😼\nYAHAN CALL NHI LAG SAKTI BSDK! 😼`
+    );
+    await api.sendMessage(warningMessage, threadID);
+  } catch (error) {
+    emitLog(`❌ Anti-call error: ${error.message}`, true);
+  }
+}
 
-            if (event.type === 'message' && event.body && event.senderID !== api.getCurrentUserID()) {
-                handleMessage(api, event);
-            }
+// --- WEB SERVER & DASHBOARD ---
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
+app.use(express.static('public'));
+app.get('/', (req, res) => { res.sendFile(__dirname + '/public/index.html'); });
 
-            if (event.type === 'event' && event.logMessageType) {
-                handleLogEvent(api, event);
-            }
-        });
-
-        res.send('✅ बॉट सफलतापूर्वक शुरू हो गया!');
-    });
+app.post('/configure', (req, res) => {
+  try {
+    const cookies = JSON.parse(req.body.cookies);
+    prefix = req.body.prefix || '/';
+    adminID = req.body.adminID;
+    if (!Array.isArray(cookies) || cookies.length === 0 || !adminID) {
+      return res.status(400).send('Error: Missing configuration.');
+    }
+    res.send('Bot configured successfully!');
+    initializeBot(cookies, prefix, adminID);
+  } catch (e) {
+    res.status(400).send('Error: Invalid JSON.');
+  }
 });
 
-// ==================== MESSAGE HANDLER ====================
-function handleMessage(api, event) {
-    const { body, senderID, threadID } = event;
-    const threadSetting = threadSettings.get(threadID) || {};
-
-    // Target mode auto-reply
-    const target = targetMode.get(threadID);
-    if (target && target.active && target.targetID === senderID) {
-        api.sendMessage('𝐓𝐄𝐑𝐈 𝐌𝐀 𝐊𝐈 𝐂𝐇𝐔𝐓 🖕', threadID);
+let loadedConfig = null;
+try {
+  if (fs.existsSync('config.json')) {
+    loadedConfig = JSON.parse(fs.readFileSync('config.json'));
+    if (loadedConfig.botNickname) botNickname = loadedConfig.botNickname;
+    if (loadedConfig.cookies && loadedConfig.cookies.length > 0) {
+        initializeBot(loadedConfig.cookies, prefix, adminID);
     }
+  }
+} catch (e) { emitLog('❌ Config error: ' + e.message, true); }
 
-    // Fight mode (random gaali)
-    if (fightMode.get(threadID)) {
-        const insults = ['𝐁𝐡𝐨𝐬𝐝𝐢𝐤𝐞', '𝐌𝐚𝐝𝐚𝐫𝐜𝐡𝐨𝐝', '𝐆𝐚𝐧𝐝𝐮', '𝐇𝐚𝐫𝐚𝐦𝐢', '𝐂𝐡𝐮𝐭𝐢𝐲𝐚'];
-        const randomInsult = insults[Math.floor(Math.random() * insults.length)];
-        api.sendMessage(randomInsult, threadID);
-        return;
-    }
-
-    // Commands
-    if (body.startsWith(prefix)) {
-        const args = body.slice(prefix.length).trim().split(/ +/);
-        const cmd = args.shift().toLowerCase();
-
-        emitLog(`📨 कमांड: ${cmd} थ्रेड ${threadID} से`);
-
-        const adminOnly = ['target', 'fight', 'stop', 'group', 'nickname', 'photolock', 'botnickname'];
-        if (adminOnly.includes(cmd) && !isAdmin(senderID)) {
-            api.sendMessage('❌ यह कमांड सिर्फ एडमिन इस्तेमाल कर सकता है!', threadID);
-            return;
-        }
-
-        switch (cmd) {
-            case 'help':
-                sendHelp(api, threadID);
-                break;
-
-            case 'tid':
-                api.sendMessage(`इस ग्रुप की आईडी: ${threadID}`, threadID);
-                break;
-
-            case 'uid':
-                if (Object.keys(event.mentions).length > 0) {
-                    const uid = Object.keys(event.mentions)[0];
-                    api.sendMessage(`उस यूजर की आईडी: ${uid}`, threadID);
-                } else {
-                    api.sendMessage(`आपकी आईडी: ${senderID}`, threadID);
-                }
-                break;
-
-            // ========== GROUP SECURITY ==========
-            case 'group':
-                if (args[0] === 'on') {
-                    const newName = args.slice(1).join(' ');
-                    if (!newName) {
-                        api.sendMessage('❌ नाम लिखो! उदाहरण: /group on Mera Group', threadID);
-                        return;
-                    }
-                    api.setTitle(newName, threadID, (err) => {
-                        if (err) {
-                            api.sendMessage('❌ नाम सेट नहीं हुआ', threadID);
-                        } else {
-                            const settings = threadSettings.get(threadID) || {};
-                            settings.lockedGroupName = newName;
-                            threadSettings.set(threadID, settings);
-                            api.sendMessage(`✅ ग्रुप का नाम लॉक कर दिया: "${newName}"`, threadID);
-                        }
-                    });
-                } else if (args[0] === 'off') {
-                    const settings = threadSettings.get(threadID) || {};
-                    delete settings.lockedGroupName;
-                    threadSettings.set(threadID, settings);
-                    api.sendMessage('✅ ग्रुप नाम लॉक हटा दिया', threadID);
-                } else {
-                    api.sendMessage('⚠️ सही फॉर्मेट: /group on <नाम> या /group off', threadID);
-                }
-                break;
-
-            case 'nickname':
-                if (args[0] === 'on') {
-                    const nick = args.slice(1).join(' ');
-                    if (!nick) {
-                        api.sendMessage('❌ निकनेम लिखो! उदाहरण: /nickname on SpiderMan', threadID);
-                        return;
-                    }
-                    api.getThreadInfo(threadID, (err, info) => {
-                        if (err) {
-                            api.sendMessage('❌ ग्रुप जानकारी नहीं मिली', threadID);
-                            return;
-                        }
-                        info.participantIDs.forEach(uid => {
-                            api.changeNickname(nick, threadID, uid, (err) => {
-                                if (err) console.log('Nickname change error for', uid);
-                            });
-                        });
-                        const settings = threadSettings.get(threadID) || {};
-                        settings.lockedNickname = nick;
-                        threadSettings.set(threadID, settings);
-                        api.sendMessage(`✅ सभी का निकनेम लॉक कर दिया: "${nick}"`, threadID);
-                    });
-                } else if (args[0] === 'off') {
-                    const settings = threadSettings.get(threadID) || {};
-                    delete settings.lockedNickname;
-                    threadSettings.set(threadID, settings);
-                    api.sendMessage('✅ निकनेम लॉक हटा दिया', threadID);
-                } else {
-                    api.sendMessage('⚠️ सही फॉर्मेट: /nickname on <निकनेम> या /nickname off', threadID);
-                }
-                break;
-
-            case 'photolock':
-                if (args[0] === 'on') {
-                    const photoUrl = 'https://i.ibb.co/1YkGn1ts/34b55d0c232d6b7ba78dde006e979dfc.jpg';
-                    api.changeThreadImage(photoUrl, threadID, (err) => {
-                        if (err) {
-                            api.sendMessage('❌ फोटो सेट नहीं हुई', threadID);
-                        } else {
-                            const settings = threadSettings.get(threadID) || {};
-                            settings.lockedPhoto = photoUrl;
-                            threadSettings.set(threadID, settings);
-                            api.sendMessage('✅ ग्रुप फोटो लॉक कर दी गई', threadID);
-                        }
-                    });
-                } else if (args[0] === 'off') {
-                    const settings = threadSettings.get(threadID) || {};
-                    delete settings.lockedPhoto;
-                    threadSettings.set(threadID, settings);
-                    api.sendMessage('✅ फोटो लॉक हटा दिया', threadID);
-                } else {
-                    api.sendMessage('⚠️ सही फॉर्मेट: /photolock on या /photolock off', threadID);
-                }
-                break;
-
-            case 'botnickname':
-                const newNick = args.join(' ');
-                if (!newNick) {
-                    api.sendMessage('❌ निकनेम लिखो!', threadID);
-                    return;
-                }
-                api.changeNickname(newNick, threadID, api.getCurrentUserID(), (err) => {
-                    if (err) {
-                        api.sendMessage('❌ निकनेम सेट नहीं हुआ', threadID);
-                    } else {
-                        const settings = threadSettings.get(threadID) || {};
-                        settings.botNickname = newNick;
-                        threadSettings.set(threadID, settings);
-                        api.sendMessage(`✅ बॉट का निकनेम सेट: "${newNick}"`, threadID);
-                    }
-                });
-                break;
-
-            // ========== TARGET SYSTEM ==========
-            case 'target':
-                if (args[0] === 'on') {
-                    const mention = Object.keys(event.mentions)[0];
-                    if (!mention) {
-                        api.sendMessage('❌ किसी को मेंशन करो! उदाहरण: /target on @username', threadID);
-                        return;
-                    }
-                    targetMode.set(threadID, { targetID: mention, active: true });
-                    api.sendMessage(`🎯 टारगेट सेट: ${mention}`, threadID);
-                } else if (args[0] === 'off') {
-                    targetMode.delete(threadID);
-                    api.sendMessage('✅ टारगेट बंद', threadID);
-                } else {
-                    api.sendMessage('⚠️ सही फॉर्मेट: /target on @मेंशन या /target off', threadID);
-                }
-                break;
-
-            // ========== FIGHT MODE ==========
-            case 'fight':
-                if (args[0] === 'on') {
-                    fightMode.set(threadID, true);
-                    api.sendMessage('⚔️ फाइट मोड ऑन! अब हर मैसेज पर जवाब मिलेगा', threadID);
-                } else {
-                    api.sendMessage('⚠️ सही फॉर्मेट: /fight on', threadID);
-                }
-                break;
-
-            case 'stop':
-                fightMode.delete(threadID);
-                api.sendMessage('🛑 फाइट मोड बंद', threadID);
-                break;
-
-            default:
-                api.sendMessage('❌ अज्ञात कमांड। /help देखो।', threadID);
-        }
-    }
-}
-
-// ==================== LOG EVENT HANDLER ====================
-function handleLogEvent(api, event) {
-    const { threadID, logMessageType, logMessageData } = event;
-    const settings = threadSettings.get(threadID);
-    if (!settings) return;
-
-    // Group name change
-    if (logMessageType === 'log:thread-name' && settings.lockedGroupName) {
-        const newName = logMessageData.name;
-        if (newName !== settings.lockedGroupName) {
-            api.setTitle(settings.lockedGroupName, threadID, (err) => {
-                if (!err) {
-                    api.sendMessage('⚠️ ग्रुप का नाम बदलने की कोशिश हुई, वापस लॉक किया गया!', threadID);
-                }
-            });
-        }
-    }
-
-    // Nickname change
-    if (logMessageType === 'log:user-nickname' && settings.lockedNickname) {
-        const { participant_id, nickname } = logMessageData;
-        if (nickname !== settings.lockedNickname) {
-            api.changeNickname(settings.lockedNickname, threadID, participant_id, (err) => {
-                if (!err) {
-                    api.sendMessage(`⚠️ ${participant_id} का निकनेम बदलने की कोशिश हुई, वापस लॉक किया गया!`, threadID);
-                }
-            });
-        }
-    }
-
-    // Photo change
-    if (logMessageType === 'log:thread-icon' && settings.lockedPhoto) {
-        api.changeThreadImage(settings.lockedPhoto, threadID, (err) => {
-            if (!err) {
-                api.sendMessage('⚠️ ग्रुप फोटो बदलने की कोशिश हुई, वापस लॉक किया गया!', threadID);
-            }
-        });
-    }
-
-    // Bot's own nickname change
-    if (logMessageType === 'log:user-nickname' && logMessageData.participant_id === api.getCurrentUserID() && settings.botNickname) {
-        if (logMessageData.nickname !== settings.botNickname) {
-            api.changeNickname(settings.botNickname, threadID, api.getCurrentUserID(), (err) => {
-                if (!err) {
-                    api.sendMessage('⚠️ मेरा निकनेम बदलने की कोशिश हुई, वापस लॉक किया गया!', threadID);
-                }
-            });
-        }
-    }
-}
-
-// ==================== HELP MESSAGE ====================
-function sendHelp(api, threadID) {
-    const helpMsg = `
-😈 𝐃𝟑𝟑𝐏 𝐁𝟒𝐃𝐌𝟒𝐒𝐇 𝐁𝐎𝐓 😈
-उपलब्ध कमांड्स:
-
-📚 सामान्य:
-  /help – यह मैसेज
-  /tid – ग्रुप आईडी
-  /uid – अपनी या मेंशन यूजर की आईडी
-
-🔐 ग्रुप सिक्योरिटी (केवल एडमिन):
-  /group on <नाम> – ग्रुप नाम लॉक
-  /group off – लॉक हटाएँ
-  /nickname on <निकनेम> – सबका निकनेम लॉक
-  /nickname off – लॉक हटाएँ
-  /photolock on – ग्रुप फोटो लॉक
-  /photolock off – लॉक हटाएँ
-  /botnickname <नाम> – बॉट का निकनेम सेट
-
-🎯 टारगेट सिस्टम (केवल एडमिन):
-  /target on @मेंशन – यूजर को टारगेट करें
-  /target off – बंद करें
-
-⚔️ फाइट मोड (केवल एडमिन):
-  /fight on – फाइट मोड शुरू
-  /stop – बंद करें
-    `;
-    api.sendMessage(helpMsg, threadID);
-}
-
-// ==================== SERVER START ====================
-const PORT = process.env.PORT || 10000;
-server.listen(PORT, () => {
-    console.log(`🌐 सर्वर चल रहा है पोर्ट ${PORT} पर`);
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => { emitLog(`✅ Server running on port ${PORT}`); });
+io.on('connection', (socket) => {
+  socket.emit('botlog', `Bot status: ${botAPI ? 'Started' : 'Not started'}`);
+  socket.emit('groupsUpdate', Array.from(joinedGroups));
 });
+
+async function handleBotAddedToGroup(api, event) {
+  const { threadID, logMessageData } = event;
+  const botID = api.getCurrentUserID();
+  if (logMessageData.addedParticipants.some(p => p.userFbId === botID)) {
+    try {
+      await api.changeNickname(botNickname, threadID, botID);
+      await api.sendMessage(`😈𝟒𝐋𝐋 𝐇𝟒𝐓𝟑𝐑𝐒 𝐊𝐈 𝐌𝟒𝟒 𝐂𝐇𝐎𝐃𝐍𝟑 𝐖𝟒𝐋𝟒 𝐖𝐀𝐋𝐄𝐄𝐃𝐁 𝐁𝐎𝐓 𝐇𝟑𝐑𝟑 😈`, threadID);
+    } catch (e) { emitLog('❌ Add error: ' + e.message, true); }
+  }
+}
+
+function emitGroups() { io.emit('groupsUpdate', Array.from(joinedGroups)); }
+
+async function formatMessage(api, event, mainMessage) {
+    const { senderID } = event;
+    let senderName = 'User';
+    try {
+      const userInfo = await api.getUserInfo(senderID);
+      senderName = userInfo && userInfo[senderID] && userInfo[senderID].name ? userInfo[senderID].name : 'User';
+    } catch (e) { emitLog('❌ Info error: ' + e.message, true); }
+    
+    const styledMentionBody = `             [🦋°🫧•𖨆٭ ${senderName}꙳○𖨆°🦋]`;
+    const fromIndex = styledMentionBody.indexOf(senderName);
+    const mentionObject = { tag: senderName, id: senderID, fromIndex: fromIndex };
+    const finalMessage = `${styledMentionBody}\n${mainMessage}${signature}${separator}`;
+    return { body: finalMessage, mentions: [mentionObject] };
+}
+
+async function handleMessage(api, event) {
+  try {
+    const { threadID, senderID, body, mentions } = event;
+    const isAdmin = senderID === adminID;
+    let replyMessage = '';
+    let isReply = false;
+
+    if (Object.keys(mentions || {}).includes(adminID)) {
+      replyMessage = "😈 NAAM MAT LE 𝐖𝐀𝐋𝐄𝐄𝐃 JIJU JI BOL 😼";
+      isReply = true;
+    }
+
+    if (body) {
+      const lowerCaseBody = body.toLowerCase();
+      if (lowerCaseBody.includes('mkc')) {
+        replyMessage = `😼𝐁𝐎𝐋 𝐍𝐀 𝐌𝐀𝐃𝐑𝐂𝐇𝐎𝐃𝐄 𝐓𝐄𝐑𝐈 𝐆𝐀𝐍𝐃 𝐌𝐀𝐀𝐑𝐔🙄`;
+        isReply = true;
+      } else if (lowerCaseBody.trim() === 'bot') {
+        const botResponses = [`😈𝗕𝗢𝗟 𝗡𝗔 𝗠𝗔𝗗𝗥𝗖𝗛𝗢𝗗😼👈🏻`, `🙄𝗠𝗨𝗛 𝗠𝗘 𝗟𝗘𝗚𝗔 𝗞𝗬𝗔 𝗠𝗖🙄👈🏻` ];
+        replyMessage = botResponses[Math.floor(Math.random() * botResponses.length)];
+        isReply = true;
+      }
+      
+      if (isReply) {
+          const formattedReply = await formatMessage(api, event, replyMessage);
+          return await api.sendMessage(formattedReply, threadID);
+      }
+    }
+
+    if (!body || !body.startsWith(prefix)) return;
+    const args = body.slice(prefix.length).trim().split(/ +/);
+    const command = args.shift().toLowerCase();
+    let commandReply = '';
+
+    switch (command) {
+      case 'group': await handleGroupCommand(api, event, args, isAdmin); return;
+      case 'target': await handleTargetCommand(api, event, args, isAdmin); return;
+      case 'mentiontarget': await handleMentionTargetCommand(api, event, args, isAdmin); return;
+      case 'stop': await handleStopCommand(api, event, isAdmin); return;
+      case 'help': await handleHelpCommand(api, event); return;
+      case 'tid': commandReply = `Group ID: ${threadID}`; break;
+      case 'status': await handleStatusCommand(api, event, isAdmin); return;
+      default:
+        commandReply = isAdmin ? `Ye h mera prefix ${prefix}` : `Tera jija hu mc!`;
+    }
+    
+    if (commandReply) {
+        const formattedReply = await formatMessage(api, event, commandReply);
+        await api.sendMessage(formattedReply, threadID);
+    }
+  } catch (err) { emitLog('❌ Message error: ' + err.message, true); }
+}
+
+// --- MENTION TARGET (SLOWED MODIFICATION) ---
+async function handleMentionTargetCommand(api, event, args, isAdmin) {
+  const { threadID, mentions } = event;
+  if (!isAdmin) return;
+
+  const subCommand = args.shift()?.toLowerCase();
+  if (subCommand === 'on') {
+    if (Object.keys(mentions || {}).length === 0) return;
+    const fileNumber = args.shift();
+    const mentionedID = Object.keys(mentions)[0];
+    const filePath = path.join(__dirname, `np${fileNumber}.txt`);
+    if (!fs.existsSync(filePath)) return;
+
+    const targetMessages = fs.readFileSync(filePath, 'utf8').split('\n').filter(l => l.trim() !== '');
+    const userInfo = await api.getUserInfo(mentionedID);
+    const targetName = userInfo[mentionedID]?.name || "User";
+    
+    if (targetSessions[threadID]?.active) clearInterval(targetSessions[threadID].interval);
+
+    let currentIndex = 0;
+    [span_3](start_span)// MODIFICATION: Set delay to 25 seconds for inbox protection[span_3](end_span)
+    const interval = setInterval(async () => {
+      try {
+        const formattedMessage = `@${targetName} ${targetMessages[currentIndex]}\n\nMR AAHAN HERE 😈`;
+        await botAPI.sendMessage(formattedMessage, mentionedID);
+        await botAPI.sendMessage(`💣 ${targetName} KO INBOX ME REPORT MARA GAYA! 😈`, threadID);
+        currentIndex = (currentIndex + 1) % targetMessages.length;
+      } catch (err) {
+        clearInterval(interval);
+        delete targetSessions[threadID];
+      }
+    }, 25000); 
+
+    targetSessions[threadID] = { active: true, targetName, interval, isMentionTarget: true };
+    await api.sendMessage(`💣 **Mention Target Lock!** (25s Delay) 😈`, threadID);
+  
+  } else if (subCommand === 'off') {
+    if (targetSessions[threadID]?.active) {
+      clearInterval(targetSessions[threadID].interval);
+      delete targetSessions[threadID];
+      await api.sendMessage(`🛑 **Mention Target Off!**`, threadID);
+    }
+  }
+}
+
+// --- TARGET COMMAND (SLOWED MODIFICATION) ---
+async function handleTargetCommand(api, event, args, isAdmin) {
+  const { threadID } = event;
+  if (!isAdmin) return;
+
+  const subCommand = args.shift()?.toLowerCase();
+  if (subCommand === 'on') {
+    const fileNumber = args.shift();
+    const targetName = args.join(' ');
+    const filePath = path.join(__dirname, `np${fileNumber}.txt`);
+    if (!fs.existsSync(filePath)) return;
+
+    const targetMessages = fs.readFileSync(filePath, 'utf8').split('\n').filter(l => l.trim() !== '');
+    if (targetSessions[threadID]?.active) clearInterval(targetSessions[threadID].interval);
+
+    let currentIndex = 0;
+    [span_4](start_span)// MODIFICATION: Set delay to 15 seconds for group message slowing[span_4](end_span)
+    const interval = setInterval(async () => {
+      const formattedMessage = `${targetName} ${targetMessages[currentIndex]}\n\nMR AAHAN HERE 😈`;
+      try {
+        await botAPI.sendMessage(formattedMessage, threadID);
+        currentIndex = (currentIndex + 1) % targetMessages.length;
+      } catch (err) {
+        clearInterval(interval);
+        delete targetSessions[threadID];
+      }
+    }, 15000);
+
+    targetSessions[threadID] = { active: true, targetName, interval };
+    await api.sendMessage(`💣 **Target lock!** (15s Delay)`, threadID);
+  } else if (subCommand === 'off') {
+    if (targetSessions[threadID]?.active) {
+      clearInterval(targetSessions[threadID].interval);
+      delete targetSessions[threadID];
+      await api.sendMessage("🛑 **Target Off!**", threadID);
+    }
+  }
+}
+
+// --- REMAINING HANDLERS (UNCHANGED) ---
+async function handleGroupCommand(api, event, args, isAdmin) {
+  const { threadID } = event;
+  if (!isAdmin) return;
+  const subCommand = args.shift();
+  if (subCommand === 'on') {
+    const groupName = args.join(' ');
+    lockedGroups[threadID] = groupName;
+    await api.setTitle(groupName, threadID);
+    await api.sendMessage(`😼 GROUP NAME LOCKED 😼`, threadID);
+  } else if (subCommand === 'off') {
+    delete lockedGroups[threadID];
+    await api.sendMessage("Group name unlocked.", threadID);
+  }
+}
+
+async function handleStopCommand(api, event, isAdmin) {
+  const { threadID } = event;
+  if (!isAdmin) return;
+  if (targetSessions[threadID]?.active) {
+    clearInterval(targetSessions[threadID].interval);
+    delete targetSessions[threadID];
+    await api.sendMessage("All attacks stopped.", threadID);
+  }
+}
+
+async function handleStatusCommand(api, event, isAdmin) {
+  const { threadID } = event;
+  if (!isAdmin) return;
+  const status = `STATUS:\n• Target: ${targetSessions[threadID]?.active ? "ON" : "OFF"}\n• Anti-Out: ${antiOutEnabled ? "ON" : "OFF"}`;
+  await api.sendMessage(status, threadID);
+}
+
+async function handleHelpCommand(api, event) {
+  const { threadID } = event;
+  const help = `HELP:\n${prefix}target on/off\n${prefix}mentiontarget on/off\n${prefix}stop`;
+  await api.sendMessage(help, threadID);
+}
+
+async function handleThreadNameChange(api, event) {
+  const { threadID, authorID } = event;
+  if (lockedGroups[threadID] && authorID !== adminID) {
+    await api.setTitle(lockedGroups[threadID], threadID);
+  }
+}
+
+async function handleNicknameChange(api, event) {
+  const { threadID, authorID, participantID, newNickname } = event;
+  if (participantID === api.getCurrentUserID() && authorID !== adminID && newNickname !== botNickname) {
+    await api.changeNickname(botNickname, threadID, participantID);
+  }
+}
+
+async function handleGroupImageChange(api, event) {}
