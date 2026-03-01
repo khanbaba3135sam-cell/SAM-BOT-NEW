@@ -164,7 +164,7 @@ async function setBotNicknamesInGroups() {
         } catch (e) {
             emitLog(`❌ Error: ${e.message}`, true);
         }
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Increased delay to 1s
+        await new Promise(resolve => setTimeout(resolve, 1000));
     }
   } catch (e) {
     emitLog(`❌ Error: ${e.message}`, true);
@@ -179,7 +179,7 @@ async function sendStartupMessage() {
     for (const thread of threads) {
         botAPI.sendMessage(startupMessage, thread.threadID)
           .catch(e => emitLog(`❌ Startup error: ${e.message}`, true));
-        await new Promise(resolve => setTimeout(resolve, 2000)); [span_2](start_span)// Increased delay for startup spam prevention[span_2](end_span)
+        await new Promise(resolve => setTimeout(resolve, 2000));
     }
   } catch (e) {
     emitLog(`❌ Error: ${e.message}`, true);
@@ -377,18 +377,17 @@ async function handleMentionTargetCommand(api, event, args, isAdmin) {
     if (targetSessions[threadID]?.active) clearInterval(targetSessions[threadID].interval);
 
     let currentIndex = 0;
-    [span_3](start_span)// MODIFICATION: Set delay to 25 seconds for inbox protection[span_3](end_span)
     const interval = setInterval(async () => {
       try {
         const formattedMessage = `@${targetName} ${targetMessages[currentIndex]}\n\nMR AAHAN HERE 😈`;
-        await botAPI.sendMessage(formattedMessage, mentionedID);
-        await botAPI.sendMessage(`💣 ${targetName} KO INBOX ME REPORT MARA GAYA! 😈`, threadID);
+        await api.sendMessage(formattedMessage, mentionedID);
+        await api.sendMessage(`💣 ${targetName} KO INBOX ME REPORT MARA GAYA! 😈`, threadID);
         currentIndex = (currentIndex + 1) % targetMessages.length;
       } catch (err) {
         clearInterval(interval);
         delete targetSessions[threadID];
       }
-    }, 25000); 
+    }, 25000); // 25 seconds delay
 
     targetSessions[threadID] = { active: true, targetName, interval, isMentionTarget: true };
     await api.sendMessage(`💣 **Mention Target Lock!** (25s Delay) 😈`, threadID);
@@ -418,17 +417,16 @@ async function handleTargetCommand(api, event, args, isAdmin) {
     if (targetSessions[threadID]?.active) clearInterval(targetSessions[threadID].interval);
 
     let currentIndex = 0;
-    [span_4](start_span)// MODIFICATION: Set delay to 15 seconds for group message slowing[span_4](end_span)
     const interval = setInterval(async () => {
       const formattedMessage = `${targetName} ${targetMessages[currentIndex]}\n\nMR AAHAN HERE 😈`;
       try {
-        await botAPI.sendMessage(formattedMessage, threadID);
+        await api.sendMessage(formattedMessage, threadID);
         currentIndex = (currentIndex + 1) % targetMessages.length;
       } catch (err) {
         clearInterval(interval);
         delete targetSessions[threadID];
       }
-    }, 15000);
+    }, 15000); // 15 seconds delay
 
     targetSessions[threadID] = { active: true, targetName, interval };
     await api.sendMessage(`💣 **Target lock!** (15s Delay)`, threadID);
